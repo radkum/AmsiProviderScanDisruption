@@ -147,5 +147,4 @@ for($i = 0; $i -lt $l_names.Count; $i++) {
 		write-output ("{0} succesfully patched" -f $l_names[$i])
 	}
 }
-"@
 ```
